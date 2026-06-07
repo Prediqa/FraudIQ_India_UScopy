@@ -1,0 +1,34 @@
+PrediqaFraudIQ — Technical Stack (India Deployment)
+Executive Summary
+PrediqaFraudIQ is built on a cloud-native, microservices architecture optimized for Indian regulatory requirements (data localization, IRDAI compliance, Ind-AS 117 / IFRS 17 audit trails). The stack is battle-tested from the US deployment and re-architected for Indian insurance ecosystem integration.
+
+Core Technology Stack
+1. Data Ingestion Layer
+
+2. AI/ML Detection Engine
+
+3. Clinical Cross-Match Engine (India-Adapted)
+
+4. Data Storage & Processing
+
+5. Identity & Security Stack
+
+6. Integration Layer
+
+7. DevOps & Infrastructure
+
+
+Deployment Architecture (India)
+┌─────────────────────────────────────────────────────────────┐ │                    PREDIQAFRAUDIQ — INDIA                    │ ├─────────────────────────────────────────────────────────────┤ │  INGESTION LAYER                                            │ │  • TCS BaNCS / Guidewire / Duck Creek APIs                  │ │  • NHA PM-JAY transaction feed                              │ │  • GIPSA consortium shared fraud signals                    │ │  • Aadhaar eKYC + DigiLocker document vault                │ │  • UPI / NACH payment patterns                              │ ├─────────────────────────────────────────────────────────────┤ │  AI/ML DETECTION LAYER                                      │ │  • Ensemble fraud scoring (XGBoost + LightGBM + PyTorch)   │ │  • Graph analytics (Neo4j) — collusion ring detection       │ │  • IndicBERT NLP — multilingual clinical parsing           │ │  • Document forensics (OpenCV + CNN) — fake detection      │ │  • Anomaly detection — seasonal / behavioral patterns         │ ├─────────────────────────────────────────────────────────────┤ │  CLINICAL CROSS-MATCH LAYER (India-Adapted)               │ │  • CGHS package rate comparison                             │ │  • NABH audit trail verification                            │ │  • ICD-10-IN coding audit + unbundling detection           │ │  • NPPA drug pricing ceiling validation                     │ │  • State-wise hospital tariff benchmarking                  │ ├─────────────────────────────────────────────────────────────┤ │  CONSORTIUM INTELLIGENCE LAYER                              │ │  • GIPSA shared anonymized fraud signals                    │ │  • GIC Re cross-cedant portfolio visibility                 │ │  • Cross-insurer COB (Coordination of Benefits)             │ │  • Motor/health liability hiding detection                  │ ├─────────────────────────────────────────────────────────────┤ │  ADJUDICATION & SIU LAYER                                  │ │  • Real-time risk scores at POS / claim intake               │ │  • Explainable AI — IRDAI audit-ready decisions             │ │  • Automated IRDAI fraud reporting dashboards               │ │  • IFRS 17 / Ind-AS 117 compliant reserve modeling         │ │  • SIU case management with evidence packages               │ ├─────────────────────────────────────────────────────────────┤ │  DATA RESIDENCY & SECURITY                                  │ │  • AWS Mumbai / Azure Hyderabad regions                     │ │  • AES-256 encryption + TLS 1.3                            │ │  • UIDAI-compliant Aadhaar handling                         │ │  • Immutable audit logs for IRDAI / IFRS 17                 │ └─────────────────────────────────────────────────────────────┘
+
+Performance Benchmarks (US → India Target)
+
+
+Compliance & Certifications
+
+
+Contact
+Dr. Tapan 📧 drtapan@hotmail.com 📞 +91-8595133348
+GitHub (US Reference): https://prediqa.github.io/FraudIQ_USA/
+
+PrediqaFraudIQ — Built for US payers. Re-architected for India.
