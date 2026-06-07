@@ -1,34 +1,204 @@
-PrediqaFraudIQ — Technical Stack (India Deployment)
-Executive Summary
-PrediqaFraudIQ is built on a cloud-native, microservices architecture optimized for Indian regulatory requirements (data localization, IRDAI compliance, Ind-AS 117 / IFRS 17 audit trails). The stack is battle-tested from the US deployment and re-architected for Indian insurance ecosystem integration.
+# FraudIQ India — Technology Stack
 
-Core Technology Stack
-1. Data Ingestion Layer
+**Document version 1.0 · June 2026 · Pilot-stage architecture**
 
-2. AI/ML Detection Engine
+This document records every major technology choice in the FraudIQ India platform and the rationale behind it. Where a choice differs from the US reference platform, the India-specific reason is noted. Versions reflect the target pilot baseline; they are pinned in infrastructure-as-code and updated through the standard change process.
 
-3. Clinical Cross-Match Engine (India-Adapted)
+---
 
-4. Data Storage & Processing
+## 1. Stack at a glance
 
-5. Identity & Security Stack
+| Layer | Primary technologies |
+|---|---|
+| Ingestion & streaming | Apache Kafka, Kafka Connect (CDC), REST, SFTP |
+| Object & document store | Amazon S3 (object lock / immutable) |
+| Cache & feature serving | Redis (ElastiCache), Feast feature store |
+| Identity & verification | UIDAI Aadhaar eKYC, DigiLocker, NSDL PAN, biometric SDK |
+| Document AI | Tesseract, AWS Textract, custom CNN, OpenCV |
+| NLP | IndicBERT, spaCy (multilingual), transformers |
+| ML scoring | XGBoost, LightGBM, PyTorch, SHAP |
+| Graph analytics | Neo4j, NetworkX, GNNs |
+| Anomaly detection | Isolation Forest, deep autoencoders, seasonal decomposition |
+| Privacy / consortium | Federated learning (PySyft, TF Federated), differential privacy, homomorphic encryption, ZKP |
+| Relational & time-series | PostgreSQL (RDS), TimescaleDB, OpenSearch |
+| Orchestration | Kubernetes (EKS), Apache Airflow, AWS Lambda |
+| MLOps | MLflow, Kubeflow |
+| API & edge | Kong / AWS API Gateway, OAuth2/JWT, AWS WAF, ALB |
+| IaC & ops | Terraform, AWS KMS, CloudTrail, GuardDuty, AWS Config |
+| Cloud | AWS India (Mumbai `ap-south-1` primary, Hyderabad DR); Azure Hyderabad secondary |
 
-6. Integration Layer
+---
 
-7. DevOps & Infrastructure
+## 2. Ingestion & streaming
 
+**Apache Kafka** is the ingestion backbone.
 
-Deployment Architecture (India)
-┌─────────────────────────────────────────────────────────────┐ │                    PREDIQAFRAUDIQ — INDIA                    │ ├─────────────────────────────────────────────────────────────┤ │  INGESTION LAYER                                            │ │  • TCS BaNCS / Guidewire / Duck Creek APIs                  │ │  • NHA PM-JAY transaction feed                              │ │  • GIPSA consortium shared fraud signals                    │ │  • Aadhaar eKYC + DigiLocker document vault                │ │  • UPI / NACH payment patterns                              │ ├─────────────────────────────────────────────────────────────┤ │  AI/ML DETECTION LAYER                                      │ │  • Ensemble fraud scoring (XGBoost + LightGBM + PyTorch)   │ │  • Graph analytics (Neo4j) — collusion ring detection       │ │  • IndicBERT NLP — multilingual clinical parsing           │ │  • Document forensics (OpenCV + CNN) — fake detection      │ │  • Anomaly detection — seasonal / behavioral patterns         │ ├─────────────────────────────────────────────────────────────┤ │  CLINICAL CROSS-MATCH LAYER (India-Adapted)               │ │  • CGHS package rate comparison                             │ │  • NABH audit trail verification                            │ │  • ICD-10-IN coding audit + unbundling detection           │ │  • NPPA drug pricing ceiling validation                     │ │  • State-wise hospital tariff benchmarking                  │ ├─────────────────────────────────────────────────────────────┤ │  CONSORTIUM INTELLIGENCE LAYER                              │ │  • GIPSA shared anonymized fraud signals                    │ │  • GIC Re cross-cedant portfolio visibility                 │ │  • Cross-insurer COB (Coordination of Benefits)             │ │  • Motor/health liability hiding detection                  │ ├─────────────────────────────────────────────────────────────┤ │  ADJUDICATION & SIU LAYER                                  │ │  • Real-time risk scores at POS / claim intake               │ │  • Explainable AI — IRDAI audit-ready decisions             │ │  • Automated IRDAI fraud reporting dashboards               │ │  • IFRS 17 / Ind-AS 117 compliant reserve modeling         │ │  • SIU case management with evidence packages               │ ├─────────────────────────────────────────────────────────────┤ │  DATA RESIDENCY & SECURITY                                  │ │  • AWS Mumbai / Azure Hyderabad regions                     │ │  • AES-256 encryption + TLS 1.3                            │ │  • UIDAI-compliant Aadhaar handling                         │ │  • Immutable audit logs for IRDAI / IFRS 17                 │ └─────────────────────────────────────────────────────────────┘
+- *Why Kafka over RabbitMQ:* NHA-scale throughput target (10M+ claims/day) and exactly-once delivery semantics. RabbitMQ's per-message overhead and weaker ordering guarantees do not hold at this volume.
+- *Targets:* 10M+ messages/day, sub-50ms broker latency, exactly-once delivery.
+- **Kafka Connect** handles change-data-capture from legacy core systems; **REST APIs** serve real-time submission; **SFTP** ingests legacy batch files (still common among PSU insurers).
 
-Performance Benchmarks (US → India Target)
+**Amazon S3 with object lock** is the document store — immutable, versioned, encrypted at rest. Object lock satisfies the IRDAI requirement that audit documents cannot be altered or deleted within the retention window (7 years; S3 Glacier lifecycle for cold storage).
 
+---
 
-Compliance & Certifications
+## 3. Identity & document processing
 
+### Document pipeline: OCR → Parse → Validate → Forensics
 
-Contact
-Dr. Tapan 📧 drtapan@hotmail.com 📞 +91-8595133348
-GitHub (US Reference): https://prediqa.github.io/FraudIQ_USA/
+- **OCR:** Tesseract + AWS Textract + a custom CNN for low-quality scans. Multilingual across Devanagari, Tamil, Telugu, Bengali scripts and English.
+- **Parse:** layout-LM-based key-value extraction.
+- **Validate:** schema checks, field extraction, cross-referencing.
+- **Forensics:** metadata analysis, signature verification, tamper detection, AI-generated-fake detection.
 
-PrediqaFraudIQ — Built for US payers. Re-architected for India.
+*Why a custom CNN for forensics:* off-the-shelf OCR does not detect the artefacts of AI-generated documents — noise patterns, font inconsistencies, metadata anomalies. The custom model is trained specifically on these signals. (US reference accuracy: 98.7%; India model re-baselining on Indian document formats.)
+
+### Identity pipeline: Aadhaar eKYC → Liveness → Biometric match → Synthetic-ID score
+
+- **UIDAI Aadhaar eKYC** with OTP verify and **offline Aadhaar XML** support — critical for rural areas with intermittent connectivity.
+- **Liveness detection** — blink, head-turn, deepfake detection.
+- **1:N biometric deduplication** — prevents the same face enrolling as multiple beneficiaries in PM-JAY.
+- **Synthetic-ID scoring** — credit-file depth, address history, Aadhaar issuance date.
+
+**Ghost-beneficiary detection** combines zero-utilization flags, Death Master File cross-match against state vital statistics, regional-language obituary NLP scraping, and Aadhaar family-tree linkage.
+
+*Why IndicBERT over mBERT:* superior performance on Indian languages for medical NLP, which matters for parsing vernacular physician notes and discharge summaries.
+
+---
+
+## 4. AI/ML detection engine
+
+### Feature store — Feast
+
+Splits **real-time features** (claim velocity, member geo-pattern, payment timing, device fingerprint, session behaviour, agent transaction velocity) from **batch features** (provider history, hospital tariff benchmarks, seasonal fraud patterns, ICD-10-IN code distribution).
+
+### Ensemble model pipeline
+
+| Model | Role | Strength |
+|---|---|---|
+| **XGBoost** | Tabular | Structured features, SHAP explainability |
+| **LightGBM** | Tabular | High-cardinality categoricals, leaf-wise growth |
+| **PyTorch** | Neural | Embeddings, text sequences, graph structures |
+
+A **blender** (weighted average → stacking → logistic meta-learner) produces the final **FIQ Score (0–100)** with risk-tier mapping and explainability output.
+
+*Why ensemble over a single model:* reduces overfitting and improves generalization across India's demographic diversity — a single model trained on one region's claim patterns generalizes poorly nationwide.
+
+### Graph analytics — Neo4j
+
+Node types: Member, Provider, Hospital, Agent, Claim, Device, Address.
+Relationship types: TREATED_AT, REFERRED_BY, BILLED_BY, AGENT_FOR, LINKED_TO, SAME_AS, RELATED_TO.
+
+Detection patterns: collusion rings (hospital–doctor–agent triangles), claim shopping (one member → multiple insurers), ghost agenting (agent → many members, no consent), provider billing spikes (sudden 300% MoM), device clustering (multiple enrolments from one IP).
+
+*Why graph is essential in India:* Indian healthcare fraud is frequently organized rather than opportunistic. Hospital–doctor–agent rings are invisible to per-claim scoring but obvious as graph structures.
+
+### Anomaly detection
+
+Isolation Forest (unsupervised outliers), deep autoencoders (reconstruction error / latent-space anomaly), and **seasonal decomposition** for festival health-claim spikes, crop-insurance seasonality, and monsoon motor claims.
+
+*Why seasonal decomposition:* Indian insurance has strong, predictable seasonal patterns that a naïve anomaly detector would mis-flag as fraud.
+
+---
+
+## 5. Clinical cross-match engine (India-adapted)
+
+Inputs: bill (UB-04 / CMS-1500 equivalents), physician progress notes, lab reports, drug chart.
+
+The cross-match engine performs line-item tracing, temporal logic, dose-vs-lab checks, and impossible-value detection, then scores against four India-specific references:
+
+| Check | India reference | What it catches |
+|---|---|---|
+| **CGHS package-rate compare** | Govt-notified CGHS rates, state-wise tariff | Overbilling vs benchmark |
+| **NABH audit-trail verify** | NABH certificate validity, accreditation level | Accreditation fraud |
+| **ICD-10-IN coding audit** | Indian ICD-10 modifications | Upcoding, unbundling, phantom billing |
+| **NPPA drug-price check** | NPPA ceiling prices, Jan Aushadhi rates | Drug overpricing |
+
+*Why this differs from the US:* US pricing is DRG-based; India uses government-notified package rates (CGHS) and NPPA ceilings. NABH is the closest Indian equivalent to Joint Commission certification. ICD-10-IN includes Indian modifications for tropical diseases and malnutrition codes.
+
+Output conflict flags include bill-vs-notes mismatch, dose-vs-labs mismatch, impossible vitals, and duplicate billing.
+
+---
+
+## 6. Consortium intelligence (GIPSA + GIC Re)
+
+The consortium layer lets competing insurers share fraud signals without sharing raw data.
+
+- **Federated learning (PySyft, TensorFlow Federated):** models train locally inside each insurer's premises; only gradients are shared. Raw claims never leave the member.
+- **Differential privacy (ε < 1.0):** individual claim patterns cannot be reverse-engineered from aggregated signals.
+- **Homomorphic encryption:** for federated model training over encrypted data.
+- **Zero-knowledge proofs:** for membership verification.
+- **Hard rule:** competitive pricing data never enters the shared space.
+
+**GIC Re portfolio view** sees cross-cedant fraud trends and feeds predictive reserving without accessing individual cedant data. Every shared signal is logged immutably for IRDAI compliance and dispute resolution.
+
+---
+
+## 7. Data & persistence
+
+| Store | Use |
+|---|---|
+| **PostgreSQL (RDS)** | Transactional / relational data |
+| **Neo4j** | Graph relationships |
+| **TimescaleDB** | Time-series features, claim velocity |
+| **OpenSearch** | Search, log analytics |
+| **Redis (ElastiCache)** | Score cache, pre-computed features, sub-300ms p95 latency |
+| **S3** | Documents, ML models, immutable audit logs |
+
+---
+
+## 8. Orchestration, MLOps & APIs
+
+- **Kubernetes (EKS):** microservices, auto-scaling for the 10M+ claims/day target.
+- **AWS Lambda:** burst OCR workloads.
+- **Apache Airflow:** ETL and weekly model-retraining pipelines.
+- **MLflow + Kubeflow:** model versioning, A/B testing, drift detection.
+- **API gateway (Kong / AWS API Gateway):** OAuth2/JWT auth, rate limiting, IRDAI audit logging on every call.
+
+Example real-time scoring endpoint:
+
+```
+POST /v1/fraud-score
+Authorization: Bearer {jwt}
+X-Insurer-ID: GIPSA-NEW-INDIA-001
+
+{ "claim_id": "...", "member_id": "AADHAAR-XXXX-...", "diagnosis_codes": [...],
+  "procedure_codes": [...], "billed_amount": 742300, "claim_type": "INPATIENT",
+  "state": "MAHARASHTRA", "scheme": "CGHS" }
+
+→ { "fiq_score": 96, "risk_tier": "CRITICAL", "action": "SIU_REFER",
+    "confidence": 0.94, "explainability": { "top_features": [...],
+    "peer_median": 298000, "cghs_package_rate": 450000 }, "sla_hours": 168 }
+```
+
+Every response carries explainability — top features with impact weights, peer median, CGHS package rate, document flags — so the decision is defensible in audit and on appeal.
+
+---
+
+## 9. Cloud, security & residency
+
+- **Primary:** AWS Mumbai (`ap-south-1`). **DR:** Hyderabad — 4-hour RPO, 24-hour RTO. **Secondary:** Azure Hyderabad.
+- **Network:** VPC with public / private / database subnet separation; security groups deny-by-default (zero trust); NACLs for subnet filtering.
+- **Encryption:** AWS KMS envelope encryption, AES-256 at rest, TLS 1.3 in transit.
+- **Edge:** AWS WAF (OWASP Top 10, rate limiting), ALB.
+- **Monitoring:** GuardDuty (threat detection), CloudTrail (API audit), AWS Config (compliance).
+- **Residency:** all data in India; no egress without explicit consent + IRDAI approval.
+
+---
+
+## 10. Performance targets (pilot)
+
+| Metric | Target | Driver |
+|---|---|---|
+| Throughput | 10M claims/day | Kafka partitioning + EKS auto-scaling |
+| Latency (p95) | < 300 ms | Redis cache + pre-computed features |
+| Auto-clear rate | 60% | Conservative thresholds for new market |
+| SIU resolution | 30 days | Automated evidence packaging + field workflow |
+| Model retraining | Weekly | Airflow + MLflow |
+| Uptime | 99.9% | Multi-AZ + Hyderabad DR |
+| Data retention | 7 years | S3 Glacier lifecycle (IRDAI) |
+
+All performance figures are pilot-stage **targets**, not measured production results.
+
+---
+
+*Maintained by Dr. Tapan Shah, Senior Consultant. Contact: drtapan@hotmail.com · +91-8595133348.*
